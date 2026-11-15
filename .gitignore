@@ -1,0 +1,13 @@
+# 构建产物 / 随包资产不进仓库（由 CI 下载生成）
+assets/*
+!assets/.gitkeep
+dist/
+omniroute/
+*.zip
+*.tar.gz
+*.tar.xz
+build-output.txt
+
+# 编辑器
+.DS_Store
+*.swp

@@ -1,0 +1,125 @@
+name: Build OmniRoute 3.8.54 KSU module
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "customize.sh"
+      - "service.sh"
+      - "action.sh"
+      - "uninstall.sh"
+      - "module.prop"
+      - "scripts/**"
+      - "build-module.sh"
+      - ".github/workflows/build-ksu.yml"
+
+concurrency:
+  group: build-ksu-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  # 版本锁死：不允许 3.8.53，只认 release/v3.8.54
+  OMNIROUTE_VERSION: "3.8.54"
+  OMNIROUTE_BRANCH: "release/v3.8.54"
+  NODE_RUNTIME_VERSION: "24.22.1"
+
+jobs:
+  build:
+    # 公开仓库可用 arm64 免费 runner，原生编 arm64 产物，避免交叉架构的原生模块错配
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+
+    steps:
+      - name: 检出模块仓库
+        uses: actions/checkout@v4
+
+      - name: 准备 Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_RUNTIME_VERSION }}
+
+      - name: 拉取 OmniRoute ${{ env.OMNIROUTE_BRANCH }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${OMNIROUTE_BRANCH}" \
+            https://github.com/cheaper-inference/OmniRoute.git omniroute
+          node -e '
+            const v = require("./omniroute/package.json").version;
+            console.log("OmniRoute package.json version =", v);
+            if (v !== process.env.OMNIROUTE_VERSION) {
+              console.error(`版本不符：期望 ${process.env.OMNIROUTE_VERSION}，实际 ${v}`);
+              process.exit(1);
+            }
+          '
+          git -C omniroute log --oneline -1
+
+      - name: 安装依赖（npm ci，照 Dockerfile 的参数）
+        working-directory: omniroute
+        env:
+          NPM_CONFIG_LEGACY_PEER_DEPS: "true"
+          NPM_CONFIG_FUND: "false"
+          NPM_CONFIG_AUDIT: "false"
+        run: |
+          npm ci --include=optional --no-audit --no-fund \
+            --legacy-peer-deps --ignore-scripts
+
+      - name: 构建 Next standalone（webpack，与 Docker 一致）
+        working-directory: omniroute
+        env:
+          OMNIROUTE_USE_TURBOPACK: "0"
+          NEXT_TELEMETRY_DISABLED: "1"
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: npm run build
+
+      - name: 校验 standalone 产物版本
+        run: |
+          set -euo pipefail
+          test -f omniroute/.build/next/standalone/server.js
+          test -f omniroute/.build/next/standalone/dev/run-standalone.mjs
+          V=$(node -e 'console.log(require("./omniroute/.build/next/standalone/package.json").version)')
+          echo "standalone version = $V"
+          [ "$V" = "$OMNIROUTE_VERSION" ] || { echo "产物版本不符：$V"; exit 1; }
+
+      - name: 下载随包资产（rootfs + Node 运行时）
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          curl -fL --retry 5 --retry-delay 5 -o assets/rootfs-ubuntu-24.04-arm64.tar.gz \
+            https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-arm64.tar.gz \
+          || curl -fL --retry 5 -o assets/rootfs-ubuntu-24.04-arm64.tar.gz \
+            https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-arm64.tar.gz
+          curl -fL --retry 5 -o assets/node-linux-arm64-v24.tar.gz \
+            https://nodejs.org/dist/v${NODE_RUNTIME_VERSION}/node-v${NODE_RUNTIME_VERSION}-linux-arm64.tar.gz
+          ls -lh assets/
+
+      - name: 打包 KSU 模块 zip
+        run: bash build-module.sh "$PWD/omniroute" "$PWD/dist" | tee build-output.txt
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: OmniRoute-${{ env.OMNIROUTE_VERSION }}-ksu
+          path: dist/*.zip
+          retention-days: 30
+          compression-level: 0
+
+      - name: 发布 Release（手机直接下载 zip）
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ksu-v${{ env.OMNIROUTE_VERSION }}
+          name: OmniRoute ${{ env.OMNIROUTE_VERSION }} KernelSU 模块
+          files: dist/*.zip
+          fail_on_unmatched_files: true
+          body: |
+            OmniRoute **${{ env.OMNIROUTE_VERSION }}**（`release/v3.8.54`）的 KernelSU / Magisk / APatch 模块。
+
+            - 应用版本在构建时已校验：`package.json` = `${{ env.OMNIROUTE_VERSION }}`（不是 npm 上的 3.8.53）
+            - 随包：Ubuntu 24.04 base rootfs + Node v${{ env.NODE_RUNTIME_VERSION }} (linux-arm64) + Next standalone 产物
+            - 安装后默认监听 `http://127.0.0.1:20128`，开机自启
+            - 构建：GitHub Actions run #${{ github.run_number }}（${{ github.sha }}）
+
+            刷入后重启，或用模块卡片「运行」按钮启动。日志在 `/data/adb/omniroute/`。
