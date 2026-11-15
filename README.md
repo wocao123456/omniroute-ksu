@@ -93,6 +93,38 @@ su -c 'cat /data/adb/omniroute/service.log'
 su -c 'rm -f /data/adb/omniroute/stopped && sh /data/adb/modules/omniroute/service.sh'
 ```
 
+## 升级（不丢数据）
+
+新版本出来后，**直接刷新 zip 覆盖安装**，不用先卸载。安装脚本对每样东西的处理是分开的：
+
+| 对象 | 刷入时的行为 |
+| --- | --- |
+| 容器根 `/data/local/omniroute`（bin/usr/lib…） | 已存在就复用，不重解 |
+| `/opt/node` | 已存在就复用 |
+| `/opt/omniroute/app` | **唯一的覆盖点**：删旧目录，解新版本 |
+| `/opt/omniroute/data` | 完全不碰（数据库 / JWT_SECRET / STORAGE_ENCRYPTION_KEY / .env 都在这） |
+| `/data/adb/omniroute/omniroute.conf` | 已存在则不覆盖，你的端口等自定义值保留 |
+| `/data/adb/omniroute/*.log` | 追加，不删 |
+
+想更稳一点，刷之前手动备一份：
+
+```sh
+su -c 'cp -a /data/local/omniroute/opt/omniroute/data \
+         /data/local/omniroute-data-backup-$(date +%F-%H%M)'
+```
+
+从 3.8.54 升到 3.8.55 的完整动作：
+
+1. 仓库 Actions → `Build OmniRoute KSU module` → **Run workflow**
+   `version=3.8.55`、`branch=release/v3.8.55`、`commit` 留空（或填新分支的 SHA 钉死）
+   —— 版本号对不上 `package.json` 的话构建会直接红掉，不会悄悄混淆版本
+2. 等 Release 里的 `OmniRoute-3.8.55-ksu.zip` 生成（`module.prop` 的 version/versionCode 自动写对）
+3. 手机下载 → KSU/面具里直接刷入覆盖 → 重启，或点模块卡片「运行」
+4. 面板里账号密码、provider key、路由配置全部还在
+
+**只有一种情况会丢数据**：改 rootfs 本身（换发行版、换 Ubuntu 大版本）时必须删容器根再刷
+——删之前把 `/data/local/omniroute/opt/omniroute/data` 备份出来，刷完再拷回去。
+
 ## 停止 / 启动 / 卸载
 
 - 停止/启动：模块卡片上的「运行」按钮（同一个按钮按状态切换）。

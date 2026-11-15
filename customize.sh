@@ -43,10 +43,14 @@ LOG_FILE=$PERSIST_DIR/install.log
 
 ZIP_ROOTFS=$MODPATH/assets/rootfs-ubuntu-24.04-arm64.tar.gz
 ZIP_NODE=$MODPATH/assets/node-linux-arm64-v24.tar.gz
-ZIP_APP=$MODPATH/assets/omniroute-3.8.54-app.tar.gz
+# 应用包名带版本号（build-module.sh 按构建参数生成），用通配匹配，升版本不用改脚本
+ZIP_APP=$(ls "$MODPATH/assets/"omniroute-*-app.tar.gz 2>/dev/null | head -n1)
 RURIMA=$MODPATH/system/bin/rurima
 
-WANT_VERSION=3.8.54
+# 目标版本以 module.prop 为准（build-module.sh 会把构建参数写回去），
+# 这样 customize.sh 不需要跟着版本号改
+WANT_VERSION=$(sed -n 's/^version=v\{0,1\}\([0-9][0-9.]*\).*/\1/p' "$MODPATH/module.prop" 2>/dev/null | head -n1)
+[ -n "$WANT_VERSION" ] || WANT_VERSION=3.8.54
 
 # 安装结果门禁：只有容器、Node、应用三者都实测通过才置 1，
 # 只有它是 1 才允许打印「安装完成！」——避免「装完了才发现起不来」。
