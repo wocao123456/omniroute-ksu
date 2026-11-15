@@ -18,7 +18,8 @@
 ##########################################################################
 set -euo pipefail
 
-WANT_VERSION=3.8.54
+# 版本默认 3.8.54，允许用环境变量覆盖（CI 里升到 3.8.55 时改环境变量即可）
+WANT_VERSION=${OMNIROUTE_VERSION:-3.8.54}
 MODDIR=$(cd "$(dirname "$0")" && pwd)
 REPO=${1:-/root/workspace/omniroute}
 OUTDIR=${2:-$MODDIR/dist}
@@ -56,7 +57,19 @@ rm -f "$APP_TGZ"
 tar -czf "$APP_TGZ" -C "$STANDALONE" .
 say "应用包: $(du -h "$APP_TGZ" | cut -f1)  $APP_TGZ"
 
-# ---- 3. 其它资产 -------------------------------------------------------
+# ---- 3. module.prop 版本对齐（版本号由构建参数唯一决定）------------------
+MAJOR=${WANT_VERSION%%.*}
+REST=${WANT_VERSION#*.}
+MINOR=${REST%%.*}
+PATCH=${REST#*.}
+PATCH=${PATCH%%[!0-9]*}
+VCODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+say "写回 module.prop: version=v$WANT_VERSION versionCode=$VCODE"
+sed -i "s/^version=.*/version=v$WANT_VERSION/" "$MODDIR/module.prop"
+sed -i "s/^versionCode=.*/versionCode=$VCODE/" "$MODDIR/module.prop"
+sed -i "s/^name=.*/name=OmniRoute 统一 AI 路由 (v$WANT_VERSION)/" "$MODDIR/module.prop"
+
+# ---- 4. 其它资产 -------------------------------------------------------
 [ -f "$ASSETS/rootfs-ubuntu-24.04-arm64.tar.gz" ] || die "缺少 rootfs 资产"
 [ -f "$ASSETS/node-linux-arm64-v24.tar.gz" ] || die "缺少 node 资产"
 [ -x "$MODDIR/system/bin/rurima" ] || die "缺少 rurima 二进制"
@@ -65,7 +78,7 @@ say "应用包: $(du -h "$APP_TGZ" | cut -f1)  $APP_TGZ"
 chmod 0755 "$MODDIR/customize.sh" "$MODDIR/service.sh" "$MODDIR/action.sh" \
            "$MODDIR/uninstall.sh" "$MODDIR/scripts/"*.sh "$MODDIR/system/bin/rurima"
 
-# ---- 4. 打 zip ---------------------------------------------------------
+# ---- 5. 打 zip ---------------------------------------------------------
 mkdir -p "$OUTDIR"
 ZIP=$OUTDIR/OmniRoute-$WANT_VERSION-ksu.zip
 rm -f "$ZIP"

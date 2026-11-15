@@ -1,7 +1,20 @@
-name: Build OmniRoute 3.8.54 KSU module
+name: Build OmniRoute KSU module
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "目标版本（必须与 package.json 一致，例如 3.8.54）"
+        required: false
+        default: "3.8.54"
+      branch:
+        description: "上游分支（默认 release/v3.8.54）"
+        required: false
+        default: "release/v3.8.54"
+      commit:
+        description: "固定提交 SHA（留空 = 用 branch 当前 HEAD；填了就是可复现构建）"
+        required: false
+        default: "74afbcbff40ad9050af029a4aa94ed33cc50c126"
   push:
     branches: [main]
     paths:
@@ -22,14 +35,18 @@ permissions:
   contents: write
 
 env:
-  # 版本锁死：不允许 3.8.53，只认 release/v3.8.54
-  OMNIROUTE_VERSION: "3.8.54"
-  OMNIROUTE_BRANCH: "release/v3.8.54"
+  # ─── 版本钉死在这里 ────────────────────────────────────────────────────
+  # 分支会动（release/v3.8.54 的 HEAD 在一天内就从 dffeb109 走到 74afbcbf），
+  # 所以默认钉到具体提交：同一份 zip 永远由同一棵代码树构建出来。
+  # 想升到 3.8.55：手动 Run workflow，把 version / branch / commit 三个都改掉。
+  OMNIROUTE_VERSION: ${{ inputs.version || '3.8.54' }}
+  OMNIROUTE_BRANCH: ${{ inputs.branch || 'release/v3.8.54' }}
+  OMNIROUTE_COMMIT: ${{ inputs.commit || '74afbcbff40ad9050af029a4aa94ed33cc50c126' }}
   NODE_RUNTIME_VERSION: "24.22.1"
 
 jobs:
   build:
-    # 公开仓库可用 arm64 免费 runner，原生编 arm64 产物，避免交叉架构的原生模块错配
+    # 公开仓库可用 arm64 免费 runner：原生编 arm64，避免原生模块架构错配
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 150
 
@@ -42,22 +59,47 @@ jobs:
         with:
           node-version: ${{ env.NODE_RUNTIME_VERSION }}
 
-      - name: 拉取 OmniRoute ${{ env.OMNIROUTE_BRANCH }}
+      - name: 拉取 OmniRoute（优先按提交 SHA 钉死，失败回落分支 HEAD）
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch "${OMNIROUTE_BRANCH}" \
-            https://github.com/cheaper-inference/OmniRoute.git omniroute
+          echo "目标版本: $OMNIROUTE_VERSION"
+          echo "分支    : $OMNIROUTE_BRANCH"
+          echo "提交    : ${OMNIROUTE_COMMIT:-<branch HEAD>}"
+
+          git init -q omniroute
+          cd omniroute
+          git remote add origin https://github.com/cheaper-inference/OmniRoute.git
+
+          CHECKED_OUT=0
+          if [ -n "${OMNIROUTE_COMMIT:-}" ]; then
+            # GitHub 允许按 SHA 拉取可达提交；拿不到就走下面的分支回退
+            if git fetch --depth 1 origin "$OMNIROUTE_COMMIT" 2>/dev/null; then
+              git checkout -q FETCH_HEAD && CHECKED_OUT=1
+              echo "已钉到提交 $OMNIROUTE_COMMIT"
+            else
+              echo "::warning::按 SHA 拉取失败（提交可能已被回收），回落到分支 HEAD"
+            fi
+          fi
+
+          if [ "$CHECKED_OUT" = "0" ]; then
+            git fetch --depth 1 origin "$OMNIROUTE_BRANCH"
+            git checkout -q FETCH_HEAD
+            echo "::warning::本次使用 $OMNIROUTE_BRANCH 的当前 HEAD，不是钉死的提交"
+          fi
+
+          git log -1 --format='实际构建提交: %H %s'
+
           node -e '
-            const v = require("./omniroute/package.json").version;
+            const v = require("./package.json").version;
             console.log("OmniRoute package.json version =", v);
             if (v !== process.env.OMNIROUTE_VERSION) {
               console.error(`版本不符：期望 ${process.env.OMNIROUTE_VERSION}，实际 ${v}`);
+              console.error("拒绝把别的版本的代码打成这个名字的模块（3.8.53 ≠ 3.8.54 这种）。");
               process.exit(1);
             }
           '
-          git -C omniroute log --oneline -1
 
-      - name: 安装依赖（npm ci，照 Dockerfile 的参数）
+      - name: 安装依赖（npm ci，参数与官方 Dockerfile 一致）
         working-directory: omniroute
         env:
           NPM_CONFIG_LEGACY_PEER_DEPS: "true"
@@ -97,7 +139,7 @@ jobs:
           ls -lh assets/
 
       - name: 打包 KSU 模块 zip
-        run: bash build-module.sh "$PWD/omniroute" "$PWD/dist" | tee build-output.txt
+        run: bash build-module.sh "$PWD/omniroute" "$PWD/dist"
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
@@ -115,11 +157,11 @@ jobs:
           files: dist/*.zip
           fail_on_unmatched_files: true
           body: |
-            OmniRoute **${{ env.OMNIROUTE_VERSION }}**（`release/v3.8.54`）的 KernelSU / Magisk / APatch 模块。
+            OmniRoute **${{ env.OMNIROUTE_VERSION }}** 的 KernelSU / Magisk / APatch 模块。
 
-            - 应用版本在构建时已校验：`package.json` = `${{ env.OMNIROUTE_VERSION }}`（不是 npm 上的 3.8.53）
+            - 上游：`${{ env.OMNIROUTE_BRANCH }}`，构建时强制校验 `package.json` = `${{ env.OMNIROUTE_VERSION }}`（不符直接失败，不会把 3.8.53 打成 3.8.54）
             - 随包：Ubuntu 24.04 base rootfs + Node v${{ env.NODE_RUNTIME_VERSION }} (linux-arm64) + Next standalone 产物
-            - 安装后默认监听 `http://127.0.0.1:20128`，开机自启
-            - 构建：GitHub Actions run #${{ github.run_number }}（${{ github.sha }}）
+            - 安装后默认监听 `http://127.0.0.1:20128`，开机自启；日志在 `/data/adb/omniroute/`
+            - 构建：run #${{ github.run_number }}（模块仓库提交 `${{ github.sha }}`）
 
-            刷入后重启，或用模块卡片「运行」按钮启动。日志在 `/data/adb/omniroute/`。
+            刷入后重启，或用模块卡片「运行」按钮启动。
