@@ -11,12 +11,17 @@
 #   su -c "mkdir -p /data/adb/omniroute && touch /data/adb/omniroute/.keep_on_uninstall"
 ##########################################################################
 
-BASE=/data/local/omniroute
+ROOTFS=/data/local/omniroute
 PERSIST=/data/adb/omniroute
 KEEP_FLAG=$PERSIST/.keep_on_uninstall
 STOP_FLAG=$PERSIST/stopped
 GEN_FILE=$PERSIST/watchdog.gen
 TAG=omniroute-uninstall
+
+# 安全守卫：ROOTFS 为空或 "/" 时绝不往下走（防变量拼错变成删根目录）
+case "$ROOTFS" in
+  ""|"/"|"/data"|"/data/local") _log "ROOTFS 非法（$ROOTFS），中止"; exit 1 ;;
+esac
 
 _log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
@@ -46,14 +51,14 @@ done
 # 2. 清理容器目录（保留数据时只删代码，留下 data）
 if [ -f "$KEEP_FLAG" ]; then
   _log "检测到保留标记，只删除应用本体，保留数据"
-  rm -rf "$BASE/rootfs/opt/omniroute/app" 2>/dev/null
-  rm -rf "$BASE/rootfs/opt/node" 2>/dev/null
-  rmdir "$BASE/rootfs/opt/omniroute" 2>/dev/null
-  _log "数据仍在: $BASE/rootfs/opt/omniroute/data"
-  _log "彻底删除: su -c \"rm -rf $BASE $PERSIST\""
+  rm -rf "$ROOTFS/opt/omniroute/app" 2>/dev/null
+  rm -rf "$ROOTFS/opt/node" 2>/dev/null
+  rmdir "$ROOTFS/opt/omniroute" 2>/dev/null
+  _log "数据仍在: $ROOTFS/opt/omniroute/data"
+  _log "彻底删除: su -c \"rm -rf $ROOTFS $PERSIST\""
 else
-  _log "清理 $BASE"
-  rm -rf "$BASE" 2>/dev/null
+  _log "清理 $ROOTFS"
+  rm -rf "$ROOTFS" 2>/dev/null
   _log "清理 $PERSIST"
   rm -rf "$PERSIST" 2>/dev/null
 fi

@@ -11,8 +11,7 @@
 
 TOKEN="${1:-none}"
 
-BASE=/data/local/omniroute
-ROOTFS=$BASE/rootfs
+ROOTFS=/data/local/omniroute
 PERSIST=/data/adb/omniroute
 CONF=$PERSIST/omniroute.conf
 LOG=$PERSIST/service.log

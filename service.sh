@@ -16,8 +16,7 @@ MODDIR=${MODDIR:-/data/adb/modules/omniroute}
 [ ! -d "$MODDIR" ] && MODDIR=/sbin/.magisk/modules/omniroute
 [ ! -d "$MODDIR" ] && MODDIR=$(dirname "$0")
 
-BASE=/data/local/omniroute
-ROOTFS=$BASE/rootfs
+ROOTFS=/data/local/omniroute
 PERSIST=/data/adb/omniroute
 CONF=$PERSIST/omniroute.conf
 LOG=$PERSIST/service.log

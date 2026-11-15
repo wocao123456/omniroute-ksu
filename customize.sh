@@ -14,11 +14,10 @@
 #   5. service.sh 通过 rurima ruri 进容器跑 dev/run-standalone.mjs
 #
 # 目录约定：
-#   /data/local/omniroute/                    宿主侧基准目录 BASE
-#   $BASE/rootfs                              chroot 根
-#   $BASE/rootfs/opt/node                     Node 运行时
-#   $BASE/rootfs/opt/omniroute/app            应用（每次刷入覆盖）
-#   $BASE/rootfs/opt/omniroute/data           持久数据（DATA_DIR，刷入时保留）
+#   /data/local/omniroute                     chroot 根（容器根目录本体）
+#   /data/local/omniroute/opt/node            Node 运行时
+#   /data/local/omniroute/opt/omniroute/app   应用（每次刷入覆盖）
+#   /data/local/omniroute/opt/omniroute/data  持久数据（DATA_DIR，刷入时保留）
 #   /data/adb/omniroute                       模块持久目录（日志 / 配置 / 停止开关）
 ##########################################################################
 
@@ -28,11 +27,16 @@ REPLACE=""
 export PATH=/data/adb/ap/bin:/data/adb/ksu/bin:/data/adb/magisk:$PATH:$MODPATH/system/bin
 
 MODID=omniroute
-BASE=/data/local/omniroute
-ROOTFS=$BASE/rootfs
+# 容器根目录就是 /data/local/omniroute 本身（不再套一层 rootfs/）
+ROOTFS=/data/local/omniroute
 APP_DIR=$ROOTFS/opt/omniroute/app
 DATA_DIR_CT=$ROOTFS/opt/omniroute/data
 NODE_DIR=$ROOTFS/opt/node
+
+# 安全守卫：后面会 rm -rf "$ROOTFS"，变量拼错就是删错目录
+case "$ROOTFS" in
+  ""|"/"|"/data"|"/data/local") abort "! ROOTFS 非法（$ROOTFS），中止安装" ;;
+esac
 PERSIST_DIR=/data/adb/$MODID
 CONF=$PERSIST_DIR/omniroute.conf
 LOG_FILE=$PERSIST_DIR/install.log
@@ -84,14 +88,20 @@ fi
 
 ui_print "- 目标版本: OmniRoute $WANT_VERSION (release/v$WANT_VERSION)"
 ui_print "- 运行方式: rurima chroot + 自带 Node 24 + Ubuntu 24.04 base"
-ui_print "- 安装位置: $BASE"
+ui_print "- 容器根目录: $ROOTFS"
 
 ##########################################################################
 # 1. rootfs
 #
 # 已存在且完整时复用：userdata 在 rootfs 里，无条件重解会清掉用户配置。
-# 需要强制重建时删掉 $BASE/rootfs 再刷。
+# 需要强制重建时删掉 $ROOTFS 再刷。
 ##########################################################################
+# 清理：早期布局曾把容器放在 /data/local/omniroute/rootfs，拍平后这一层是残留
+if [ -f "$ROOTFS/rootfs/etc/os-release" ]; then
+  ui_print "- 清理旧布局残留 $ROOTFS/rootfs（容器根现在是 $ROOTFS 本身）"
+  rm -rf "$ROOTFS/rootfs"
+fi
+
 ROOTFS_OK=0
 if [ -f "$ROOTFS/etc/os-release" ] && [ -f "$ROOTFS/bin/sh" ]; then
   ROOTFS_OK=1

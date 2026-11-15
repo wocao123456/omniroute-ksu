@@ -8,14 +8,39 @@
 > 本模块里跑的代码是 `release/v3.8.54` 分支源码构建出来的 Next.js standalone 产物，
 > 安装时会读取应用 `package.json` 里的 version 字段做核对，不是 3.8.54 就在安装日志里报错。
 
+## 目录布局
+
+容器根目录就是 `/data/local/omniroute` 本身（与参考模块的 `/data/local/daidai` 同一形态，
+不套 `rootfs/` 子目录）：
+
+```
+/data/local/omniroute/                     ← chroot 根（ruri 直接 chroot 到这里）
+├── bin/ etc/ usr/ lib/ …                  ← Ubuntu 24.04 base rootfs
+└── opt/
+    ├── node/                              ← Node v24.22.1
+    └── omniroute/
+        ├── app/                           ← OmniRoute 3.8.54 standalone（每次刷入覆盖）
+        ├── data/                          ← 应用数据（数据库/密钥/.env），刷入时保留
+        ├── boot.sh
+        └── runtime.env
+
+/data/adb/omniroute/                       ← 只放日志与配置（不进容器）
+├── omniroute.conf   # 端口/绑定地址/堆上限
+├── service.log      # 启停、守护、端口探测
+├── app.log          # Next standalone stdout/stderr
+├── install.log      # 安装过程
+└── stopped          # 手动停止开关
+/data/adb/modules/omniroute/               ← 模块本体（root 管理器管的目录）
+```
+
 ## 组成
 
 | 组件 | 说明 |
 | --- | --- |
-| `system/bin/rurima` | 静态 arm64 二进制，提供 `ruri` chroot（不需要 proot / rootfs 里的 libc） |
-| `assets/rootfs-ubuntu-24.04-arm64.tar.gz` | Ubuntu 24.04.3 base rootfs（glibc，与构建机 ABI 一致） |
+| `system/bin/rurima` | 静态 arm64 二进制，提供 `ruri` chroot（不依赖 rootfs 里的 libc） |
+| `assets/rootfs-ubuntu-24.04-arm64.tar.gz` | Ubuntu 24.04.3 base rootfs，解到 `/data/local/omniroute` |
 | `assets/node-linux-arm64-v24.tar.gz` | Node.js v24.22.1 官方 linux-arm64 构建 |
-| `assets/omniroute-3.8.54-app.tar.gz` | 3.8.54 的 Next.js standalone 产物（含 node_modules / .next / migrations） |
+| `assets/omniroute-3.8.54-app.tar.gz` | 3.8.54 的 Next.js standalone 产物（node_modules / .next / migrations） |
 | `customize.sh` | 解包上面三样 + 写 DNS/时区/启动脚本 + 版本自检 |
 | `service.sh` | late_start 启动：`rurima ruri` 进容器跑 `dev/run-standalone.mjs` |
 | `scripts/watchdog.sh` | 存活守护：进程掉了自动拉起，连续 5 次失败才放弃 |
@@ -29,7 +54,7 @@
 3. 浏览器打开 `http://127.0.0.1:20128`。
    首次进入按面板引导设置登录密码；跳过就等于关掉面板登录。
 
-安装会往 `/data/local/omniroute` 写约 1.1GB（rootfs + Node + 应用），`/data` 至少留 2GB。
+安装会往 `/data/local/omniroute` 写约 1.3GB（rootfs + Node + 应用），`/data` 至少留 2GB。
 
 ## 配置
 
