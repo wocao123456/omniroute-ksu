@@ -59,6 +59,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_RUNTIME_VERSION }}
 
+      - name: 缓存 npm 全局缓存（重跑时省掉大半下载时间）
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ env.OMNIROUTE_VERSION }}-${{ env.OMNIROUTE_COMMIT || env.OMNIROUTE_BRANCH }}
+          restore-keys: |
+            npm-${{ env.OMNIROUTE_VERSION }}-
+
       - name: 拉取 OmniRoute（优先按提交 SHA 钉死，失败回落分支 HEAD）
         run: |
           set -euo pipefail

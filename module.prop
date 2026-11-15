@@ -3,4 +3,4 @@ name=OmniRoute 统一 AI 路由 (v3.8.54)
 version=v3.8.54
 versionCode=30854
 author=DSH-Go
-description=以 root 运行 OmniRoute release/v3.8.54 独立构建（自带 Node 24 + Ubuntu 24.04 容器），开机自启，默认监听 http://127.0.0.1:20128。数据目录 /data/local/omniroute/rootfs/opt/omniroute/data
+description=以 root 运行 OmniRoute release/v3.8.54 独立构建（自带 Node 24 + Ubuntu 24.04 容器），开机自启，默认监听 http://127.0.0.1:20128。容器根 /data/local/omniroute，数据在 opt/omniroute/data
