@@ -95,7 +95,18 @@ su -c 'mkdir -p /data/adb/omniroute && touch /data/adb/omniroute/.keep_on_uninst
 **端口被占用**
 改 `OMNIROUTE_PORT`，别改容器内的其他端口变量（`PORT` / `API_PORT` 都从它派生）。
 
-## 构建（在 arm64 Linux 上）
+## 构建
+
+**推荐：交给 GitHub Actions**（`.github/workflows/build-ksu.yml`）
+
+- runner：`ubuntu-24.04-arm`（公开仓库免费 arm64，原生编 arm64，避免原生模块架构错配）
+- 流程：拉 `release/v3.8.54` → 校验 `package.json` version = 3.8.54 → `npm ci` →
+  `npm run build`（webpack，与官方 Docker 一致）→ 下载 rootfs / Node 资产 →
+  `build-module.sh` 打 zip → 传 artifact + 发 Release
+- 触发：push 到 `main`（改脚本类文件）或在 Actions 页手动 `Run workflow`
+- 产物：Release 里的 `OmniRoute-3.8.54-ksu.zip`，手机浏览器直接下载
+
+本地手动构建（arm64 Linux，可选）：
 
 ```sh
 git clone --depth 1 --branch release/v3.8.54 \
